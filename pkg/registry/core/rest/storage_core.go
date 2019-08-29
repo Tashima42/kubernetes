@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -36,6 +37,7 @@ import (
 	networkingv1alpha1client "k8s.io/client-go/kubernetes/typed/networking/v1alpha1"
 	policyclient "k8s.io/client-go/kubernetes/typed/policy/v1"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/cluster/ports"
@@ -418,7 +420,18 @@ func (s componentStatusStorage) serversToValidate() map[string]componentstatus.S
 		"scheduler":          &componentstatus.HttpServer{EnableHTTPS: true, TLSConfig: &tls.Config{InsecureSkipVerify: true}, Addr: "127.0.0.1", Port: kubeschedulerconfig.DefaultKubeSchedulerPort, Path: "/healthz"},
 	}
 
+out:
 	for ix, cfg := range s.storageFactory.Configs() {
+		for _, server := range cfg.Transport.ServerList {
+			etcdUrl, err := url.Parse(server)
+			if err != nil {
+				klog.Errorf("Failed to parse etcd url for validation: %v", err)
+				continue
+			}
+			if etcdUrl.Scheme == "unix" {
+				continue out
+			}
+		}
 		serversToValidate[fmt.Sprintf("etcd-%d", ix)] = &componentstatus.EtcdServer{Config: cfg}
 	}
 	return serversToValidate
